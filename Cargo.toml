@@ -1,0 +1,27 @@
+[package]
+name = "hid-backlight-guard"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight pure-Rust daemon that turns peripheral backlights off when the display turns off or PC suspends"
+license = "GPL-2.0-or-later"
+
+[dependencies]
+hidapi = "2.6"
+
+[dependencies.windows-sys]
+version = "0.59"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Console",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Power",
+    "Win32_System_Registry",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
