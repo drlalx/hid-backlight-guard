@@ -29,6 +29,7 @@ use hidapi::HidApi;
 enum Action {
     Background,
     List,
+    Probe,
     Off,
     On,
     InstallAutostart,
@@ -90,6 +91,10 @@ where
         match s {
             "--list" | "-l" => {
                 action = Action::List;
+                action_explicit = true;
+            }
+            "--probe" => {
+                action = Action::Probe;
                 action_explicit = true;
             }
             "--off" => {
@@ -154,6 +159,7 @@ fn print_help() {
            -b, --background           Hintergrund-Überwachung (Standard)\n\
                --silent               Konsolenfenster im Hintergrund ausblenden\n\
            -l, --list                 Erkannte kompatible HID-Geräte anzeigen\n\
+               --probe                Hardware-Regionen & Helligkeit abfragen\n\
                --off                  Beleuchtung aller erkannten Geräte ausschalten\n\
                --on                   Beleuchtung aller erkannten Geräte wiederherstellen\n\
                --static R,G,B         Beim Einschalten statische Farbe setzen (z.B. 255,255,255)\n\
@@ -185,6 +191,26 @@ fn run() -> Result<(), GuardError> {
                         "  - [{} / {}] {} ({:04X}:{:04X}) | {}",
                         info.vendor, info.kind, info.name, info.vid, info.pid, info.protocol
                     );
+                }
+            }
+            Ok(())
+        }
+        Action::Probe => {
+            let api = HidApi::new()?;
+            let mut devices = discover_all_devices(&api)?;
+            for dev in &mut devices {
+                let info = dev.info().clone();
+                println!(
+                    "[{} / {}] {} ({:04X}:{:04X}) | {}",
+                    info.vendor, info.kind, info.name, info.vid, info.pid, info.protocol
+                );
+                match dev.probe_details() {
+                    Ok(lines) => {
+                        for line in lines {
+                            println!("    {line}");
+                        }
+                    }
+                    Err(err) => println!("    Probe-Fehler: {err}"),
                 }
             }
             Ok(())

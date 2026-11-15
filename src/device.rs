@@ -112,6 +112,9 @@ pub trait BacklightDevice {
     fn info(&self) -> &DeviceInfo;
     fn set_backlight_off(&mut self) -> Result<(), GuardError>;
     fn set_backlight_on(&mut self, restore: RestoreMode) -> Result<(), GuardError>;
+    fn probe_details(&mut self) -> Result<Vec<String>, GuardError> {
+        Ok(Vec::new())
+    }
 }
 
 /// Vendor backend responsible for discovering matching peripherals via `HidApi`.

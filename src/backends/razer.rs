@@ -71,6 +71,8 @@ impl BacklightBackend for RazerBackend {
             };
 
             let report_id = report_index_for_pid(spec.pid);
+            let led_ids = resolve_led_ids(&handle, report_id, spec);
+            let led_summary: Vec<String> = led_ids.iter().map(|id| format!("0x{id:02X}")).collect();
             let info = DeviceInfo {
                 vendor: Vendor::Razer,
                 name: spec.name.to_owned(),
@@ -79,8 +81,10 @@ impl BacklightBackend for RazerBackend {
                 pid: spec.pid,
                 path,
                 protocol: format!(
-                    "Razer {:?} (tx=0x{:02X}, led=0x{:02X})",
-                    spec.matrix, spec.tx_id, spec.led_id
+                    "Razer {:?} (tx=0x{:02X}, leds=[{}])",
+                    spec.matrix,
+                    spec.tx_id,
+                    led_summary.join(",")
                 ),
             };
 
@@ -88,6 +92,7 @@ impl BacklightBackend for RazerBackend {
                 handle,
                 spec,
                 report_id,
+                led_ids,
                 info,
             }));
         }
@@ -100,6 +105,7 @@ struct RazerBacklightDevice {
     handle: HidDevice,
     spec: RazerDeviceSpec,
     report_id: u8,
+    led_ids: Vec<u8>,
     info: DeviceInfo,
 }
 
@@ -111,22 +117,26 @@ impl BacklightDevice for RazerBacklightDevice {
     fn set_backlight_off(&mut self) -> Result<(), GuardError> {
         match self.spec.matrix {
             RazerMatrixType::Standard | RazerMatrixType::Linear => {
-                self.send_report(&build_brightness_standard_report(
-                    self.report_id,
-                    self.spec.tx_id,
-                    RAZER_STORAGE_NO_SAVE,
-                    self.spec.led_id,
-                    0,
-                )?)?;
+                for &led_id in &self.led_ids {
+                    self.send_report(&build_brightness_standard_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        RAZER_STORAGE_NO_SAVE,
+                        led_id,
+                        0,
+                    )?)?;
+                }
             }
             RazerMatrixType::Extended => {
-                self.send_report(&build_brightness_extended_report(
-                    self.report_id,
-                    self.spec.tx_id,
-                    RAZER_STORAGE_NO_SAVE,
-                    self.spec.led_id,
-                    0,
-                )?)?;
+                for &led_id in &self.led_ids {
+                    self.send_report(&build_brightness_extended_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        RAZER_STORAGE_NO_SAVE,
+                        led_id,
+                        0,
+                    )?)?;
+                }
             }
             RazerMatrixType::ExtendedArgb => {
                 for ch in RAZER_ARGB_CHANNELS {
@@ -143,14 +153,15 @@ impl BacklightDevice for RazerBacklightDevice {
                 self.set_custom_off()?;
             }
             RazerMatrixType::None => {
-                // Best effort via standard LED brightness 0.
-                self.send_report(&build_brightness_standard_report(
-                    self.report_id,
-                    self.spec.tx_id,
-                    RAZER_STORAGE_NO_SAVE,
-                    self.spec.led_id,
-                    0,
-                )?)?;
+                for &led_id in &self.led_ids {
+                    self.send_report(&build_brightness_standard_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        RAZER_STORAGE_NO_SAVE,
+                        led_id,
+                        0,
+                    )?)?;
+                }
             }
         }
         Ok(())
@@ -165,9 +176,78 @@ impl BacklightDevice for RazerBacklightDevice {
             }
         }
     }
+
+    fn probe_details(&mut self) -> Result<Vec<String>, GuardError> {
+        let mut lines = Vec::new();
+        let regions = query_lighting_regions(&self.handle, self.report_id, self.spec.tx_id);
+        if regions.is_empty() {
+            lines.push("Regions (0x0F:0x80): <none / unsupported>".to_owned());
+        } else {
+            let hex: Vec<String> = regions.iter().map(|r| format!("0x{r:02X}")).collect();
+            lines.push(format!("Regions (0x0F:0x80): [{}]", hex.join(", ")));
+        }
+        let mut probed = self.led_ids.clone();
+        for fallback in [0x00u8, 0x01, 0x04, 0x05, 0x11] {
+            if !probed.contains(&fallback) {
+                probed.push(fallback);
+            }
+        }
+        for led in probed {
+            if let Some(br) = self.query_brightness_extended(led) {
+                lines.push(format!("Brightness Extended (led=0x{led:02X}): {br}"));
+            }
+        }
+        if let Some(br_std) = self.query_brightness_standard(self.spec.led_id) {
+            lines.push(format!(
+                "Brightness Standard (led=0x{:02X}): {br_std}",
+                self.spec.led_id
+            ));
+        }
+        Ok(lines)
+    }
 }
 
 impl RazerBacklightDevice {
+    fn query_report(&self, report: &[u8; RAZER_REPORT_LEN]) -> Option<[u8; RAZER_REPORT_LEN]> {
+        query_razer_report(&self.handle, self.report_id, report)
+    }
+
+    fn query_brightness_extended(&self, led_id: u8) -> Option<u8> {
+        let req = build_report(
+            self.report_id,
+            self.spec.tx_id,
+            0x0F,
+            0x84,
+            0x03,
+            &[RAZER_STORAGE_NO_SAVE, led_id, 0x00],
+        )
+        .ok()?;
+        let resp = self.query_report(&req)?;
+        if resp.get(1).copied() == Some(0x02) {
+            resp.get(11).copied()
+        } else {
+            None
+        }
+    }
+
+    fn query_brightness_standard(&self, led_id: u8) -> Option<u8> {
+        let req = build_report(
+            self.report_id,
+            self.spec.tx_id,
+            0x03,
+            0x83,
+            0x03,
+            &[RAZER_STORAGE_NO_SAVE, led_id, 0x00],
+        )
+        .ok()?;
+        let resp = self.query_report(&req)?;
+        if resp.get(1).copied() == Some(0x02) {
+            resp.get(11).copied()
+        } else {
+            None
+        }
+    }
+
     fn send_report(&self, report: &[u8; RAZER_REPORT_LEN]) -> Result<(), GuardError> {
         self.handle.send_feature_report(report)?;
         Ok(())
@@ -176,22 +256,26 @@ impl RazerBacklightDevice {
     fn set_brightness_full(&self) -> Result<(), GuardError> {
         match self.spec.matrix {
             RazerMatrixType::Standard | RazerMatrixType::Linear => {
-                self.send_report(&build_brightness_standard_report(
-                    self.report_id,
-                    self.spec.tx_id,
-                    RAZER_STORAGE_NO_SAVE,
-                    self.spec.led_id,
-                    255,
-                )?)?;
+                for &led_id in &self.led_ids {
+                    self.send_report(&build_brightness_standard_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        RAZER_STORAGE_NO_SAVE,
+                        led_id,
+                        255,
+                    )?)?;
+                }
             }
             RazerMatrixType::Extended => {
-                self.send_report(&build_brightness_extended_report(
-                    self.report_id,
-                    self.spec.tx_id,
-                    RAZER_STORAGE_NO_SAVE,
-                    self.spec.led_id,
-                    255,
-                )?)?;
+                for &led_id in &self.led_ids {
+                    self.send_report(&build_brightness_extended_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        RAZER_STORAGE_NO_SAVE,
+                        led_id,
+                        255,
+                    )?)?;
+                }
             }
             RazerMatrixType::ExtendedArgb => {
                 for ch in RAZER_ARGB_CHANNELS {
@@ -208,13 +292,15 @@ impl RazerBacklightDevice {
                 self.set_custom_on()?;
             }
             RazerMatrixType::None => {
-                self.send_report(&build_brightness_standard_report(
-                    self.report_id,
-                    self.spec.tx_id,
-                    RAZER_STORAGE_NO_SAVE,
-                    self.spec.led_id,
-                    255,
-                )?)?;
+                for &led_id in &self.led_ids {
+                    self.send_report(&build_brightness_standard_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        RAZER_STORAGE_NO_SAVE,
+                        led_id,
+                        255,
+                    )?)?;
+                }
             }
         }
         Ok(())
@@ -232,15 +318,17 @@ impl RazerBacklightDevice {
                 )?)?;
             }
             RazerMatrixType::Extended | RazerMatrixType::ExtendedArgb => {
-                self.send_report(&build_mode_static_extended_report(
-                    self.report_id,
-                    self.spec.tx_id,
-                    RAZER_STORAGE_NO_SAVE,
-                    self.spec.led_id,
-                    r,
-                    g,
-                    b,
-                )?)?;
+                for &led_id in &self.led_ids {
+                    self.send_report(&build_mode_static_extended_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        RAZER_STORAGE_NO_SAVE,
+                        led_id,
+                        r,
+                        g,
+                        b,
+                    )?)?;
+                }
             }
             RazerMatrixType::Custom => {
                 self.set_custom_color(r, g, b)?;
@@ -427,6 +515,75 @@ impl RazerBacklightDevice {
         }
         Ok(())
     }
+}
+
+fn resolve_led_ids(handle: &HidDevice, report_id: u8, spec: RazerDeviceSpec) -> Vec<u8> {
+    if matches!(spec.matrix, RazerMatrixType::Extended) {
+        let regions = query_lighting_regions(handle, report_id, spec.tx_id);
+        if !regions.is_empty() {
+            return regions;
+        }
+    }
+    vec![spec.led_id]
+}
+
+fn query_razer_report(
+    handle: &HidDevice,
+    report_id: u8,
+    report: &[u8; RAZER_REPORT_LEN],
+) -> Option<[u8; RAZER_REPORT_LEN]> {
+    for _ in 0..2u8 {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        if handle.send_feature_report(report).is_err() {
+            continue;
+        }
+        for _ in 0..25u8 {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            let mut resp = [0u8; RAZER_REPORT_LEN];
+            if let Some(slot) = resp.get_mut(0) {
+                *slot = report_id;
+            }
+            if handle.get_feature_report(&mut resp).is_err() {
+                break;
+            }
+            let status = resp.get(1).copied().unwrap_or(0);
+            let tx = resp.get(2).copied().unwrap_or(0);
+            let cls = resp.get(7).copied().unwrap_or(0);
+            let cmd = resp.get(8).copied().unwrap_or(0);
+            if tx == report.get(2).copied().unwrap_or(0)
+                && cls == report.get(7).copied().unwrap_or(0)
+                && cmd == report.get(8).copied().unwrap_or(0)
+                && status != 0x00
+                && status != 0x01
+            {
+                return Some(resp);
+            }
+        }
+    }
+    None
+}
+
+fn query_lighting_regions(handle: &HidDevice, report_id: u8, tx_id: u8) -> Vec<u8> {
+    let mut out = Vec::new();
+    let Ok(req) = build_report(report_id, tx_id, 0x0F, 0x80, 0x50, &[]) else {
+        return out;
+    };
+    let Some(resp) = query_razer_report(handle, report_id, &req) else {
+        return out;
+    };
+    if resp.get(1).copied() != Some(0x02) {
+        return out;
+    }
+    let mut offset = 9usize;
+    while offset + 4 < 89 && out.len() < 16 {
+        let led = resp.get(offset).copied().unwrap_or(0);
+        if led == 0x00 {
+            break;
+        }
+        out.push(led);
+        offset += 5;
+    }
+    out
 }
 
 fn find_matching_spec(dev_info: &HidDeviceInfo) -> Option<RazerDeviceSpec> {
