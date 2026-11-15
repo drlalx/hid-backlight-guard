@@ -1,6 +1,7 @@
 //! Razer USB HID backlight backend ported from OpenRGB's `RazerController`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
 
 use hidapi::{DeviceInfo as HidDeviceInfo, HidApi, HidDevice};
 
@@ -27,6 +28,14 @@ const RAZER_LED_SCROLL_WHEEL: u8 = 0x01;
 const RAZER_LED_LOGO: u8 = 0x04;
 const RAZER_LED_BACKLIGHT: u8 = 0x05;
 const RAZER_ARGB_CHANNELS: [u8; 6] = [0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F];
+
+type EffectCacheMap = HashMap<(String, u8), Vec<u8>>;
+
+static SAVED_EXTENDED_EFFECTS: OnceLock<Mutex<EffectCacheMap>> = OnceLock::new();
+
+fn saved_effects_map() -> &'static Mutex<EffectCacheMap> {
+    SAVED_EXTENDED_EFFECTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Discovers and controls Razer keyboards, mice, keypads, headsets, mousemats, and accessories.
 pub struct RazerBackend;
@@ -129,6 +138,7 @@ impl BacklightDevice for RazerBacklightDevice {
             }
             RazerMatrixType::Extended => {
                 for &led_id in &self.led_ids {
+                    self.cache_current_extended_effect(led_id);
                     self.send_report(&build_brightness_extended_report(
                         self.report_id,
                         self.spec.tx_id,
@@ -140,6 +150,7 @@ impl BacklightDevice for RazerBacklightDevice {
             }
             RazerMatrixType::ExtendedArgb => {
                 for ch in RAZER_ARGB_CHANNELS {
+                    self.cache_current_extended_effect(ch);
                     self.send_report(&build_brightness_extended_report(
                         self.report_id,
                         self.spec.tx_id,
@@ -169,7 +180,11 @@ impl BacklightDevice for RazerBacklightDevice {
 
     fn set_backlight_on(&mut self, restore: RestoreMode) -> Result<(), GuardError> {
         match restore {
-            RestoreMode::Native => self.set_brightness_full(),
+            RestoreMode::Native => {
+                self.set_brightness_full()?;
+                self.restore_extended_effect_if_off()?;
+                Ok(())
+            }
             RestoreMode::Static { r, g, b } => {
                 self.set_static_color(r, g, b)?;
                 self.set_brightness_full()
@@ -192,9 +207,16 @@ impl BacklightDevice for RazerBacklightDevice {
                 probed.push(fallback);
             }
         }
+        if let Some(dm) = self.query_device_mode() {
+            lines.push(format!("Device Mode (0x00:0x84): 0x{dm:02X}"));
+        }
         for led in probed {
             if let Some(br) = self.query_brightness_extended(led) {
                 lines.push(format!("Brightness Extended (led=0x{led:02X}): {br}"));
+            }
+            if let Some(eff) = self.query_effect_extended(led) {
+                let hex: Vec<String> = eff.iter().map(|b| format!("{b:02X}")).collect();
+                lines.push(format!("Effect Extended (led=0x{led:02X}): [{}]", hex.join(" ")));
             }
         }
         if let Some(br_std) = self.query_brightness_standard(self.spec.led_id) {
@@ -208,8 +230,92 @@ impl BacklightDevice for RazerBacklightDevice {
 }
 
 impl RazerBacklightDevice {
+    fn cache_current_extended_effect(&self, led_id: u8) {
+        if let Some(effect) = self.query_effect_extended(led_id) {
+            if effect.get(2).copied().unwrap_or(0) != 0x00 {
+                if let Ok(mut guard) = saved_effects_map().lock() {
+                    guard.insert((self.info.path.clone(), led_id), effect);
+                }
+            }
+        }
+    }
+
+    fn restore_extended_effect_if_off(&self) -> Result<(), GuardError> {
+        let leds: Vec<u8> = match self.spec.matrix {
+            RazerMatrixType::Extended => self.led_ids.clone(),
+            RazerMatrixType::ExtendedArgb => RAZER_ARGB_CHANNELS.to_vec(),
+            _ => return Ok(()),
+        };
+
+        for led_id in leds {
+            let current_effect = self
+                .query_effect_extended(led_id)
+                .and_then(|eff| eff.get(2).copied());
+
+            if current_effect == Some(0x00) {
+                let cached = saved_effects_map()
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.get(&(self.info.path.clone(), led_id)).cloned());
+
+                if let Some(mut args) = cached {
+                    write_u8(&mut args, 0, RAZER_STORAGE_NO_SAVE)?;
+                    write_u8(&mut args, 1, led_id)?;
+                    let data_size = u8::try_from(args.len().max(6)).unwrap_or(6);
+                    let rep = build_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        0x0F,
+                        0x02,
+                        data_size,
+                        &args,
+                    )?;
+                    self.send_report(&rep)?;
+                } else {
+                    let rep = build_mode_spectrum_cycle_extended_report(
+                        self.report_id,
+                        self.spec.tx_id,
+                        RAZER_STORAGE_NO_SAVE,
+                        led_id,
+                    )?;
+                    self.send_report(&rep)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn query_report(&self, report: &[u8; RAZER_REPORT_LEN]) -> Option<[u8; RAZER_REPORT_LEN]> {
         query_razer_report(&self.handle, self.report_id, report)
+    }
+
+    fn query_device_mode(&self) -> Option<u8> {
+        let req = build_report(self.report_id, self.spec.tx_id, 0x00, 0x84, 0x02, &[]).ok()?;
+        let resp = self.query_report(&req)?;
+        if resp.get(1).copied() == Some(0x02) {
+            resp.get(9).copied()
+        } else {
+            None
+        }
+    }
+
+    fn query_effect_extended(&self, led_id: u8) -> Option<Vec<u8>> {
+        let req = build_report(
+            self.report_id,
+            self.spec.tx_id,
+            0x0F,
+            0x82,
+            0x06,
+            &[RAZER_STORAGE_NO_SAVE, led_id],
+        )
+        .ok()?;
+        let resp = self.query_report(&req)?;
+        if resp.get(1).copied() == Some(0x02) {
+            let size = usize::from(resp.get(6).copied().unwrap_or(6)).min(16);
+            Some(resp.get(9..9 + size).unwrap_or(&[]).to_vec())
+        } else {
+            None
+        }
     }
 
     fn query_brightness_extended(&self, led_id: u8) -> Option<u8> {
@@ -692,6 +798,15 @@ pub fn build_brightness_extended_report(
     build_report(report_id, tx_id, 0x0F, 0x04, 0x03, &[storage, led_id, brightness])
 }
 
+pub fn build_mode_spectrum_cycle_extended_report(
+    report_id: u8,
+    tx_id: u8,
+    storage: u8,
+    led_id: u8,
+) -> Result<[u8; RAZER_REPORT_LEN], GuardError> {
+    build_report(report_id, tx_id, 0x0F, 0x02, 0x06, &[storage, led_id, 0x03])
+}
+
 pub fn build_mode_static_standard_report(
     report_id: u8,
     tx_id: u8,
@@ -788,5 +903,17 @@ mod tests {
     fn ornata_v2_and_naga_trinity_are_registered() {
         assert!(RAZER_DEVICES.iter().any(|d| d.pid == 0x025D));
         assert!(RAZER_DEVICES.iter().any(|d| d.pid == 0x0067));
+    }
+
+    #[test]
+    fn extended_spectrum_cycle_report_matches_openrgb_layout() {
+        let report = build_mode_spectrum_cycle_extended_report(0x00, 0x1F, 0x00, 0x05).unwrap();
+        assert_eq!(report[2], 0x1F);
+        assert_eq!(report[6], 0x06);
+        assert_eq!(report[7], 0x0F);
+        assert_eq!(report[8], 0x02);
+        assert_eq!(report[9], 0x00);
+        assert_eq!(report[10], 0x05);
+        assert_eq!(report[11], 0x03);
     }
 }
