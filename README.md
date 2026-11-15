@@ -1,50 +1,56 @@
 # hid-backlight-guard
 
-Ein schlankes, komplett in **pure Rust** geschriebenes Windows-Dienstprogramm, das die Hintergrundbeleuchtung unterstützter HID-Peripheriegeräte (Tastaturen, Mäuse, Headsets, Mousepads usw.) automatisch ausschaltet, sobald der Bildschirm abgeschaltet wird oder der PC in den Energiesparmodus wechselt – und beim Aufwecken wiederherstellt.
+> [Deutsche Version (README.de.md)](README.de.md)
 
-## Merkmale
+A lightweight, **pure-Rust** Windows utility that automatically turns off peripheral backlights (keyboards, mice, headsets, mousemats, etc.) when the display turns off or the PC enters sleep mode, and restores them on wake.
 
-- **Pure Rust, Zero-Panic in Produktivcode**: Keine `.unwrap()`, `.expect()`, `panic!()` oder ungeprüften Index-Zugriffe im Produktivcode (durch `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing, ...)]` erzwungen; Panics sind ausschließlich in `#[cfg(test)]`-Unittests erlaubt).
-- **Herstellerneutral & erweiterbar**: Modulare Trait-Architektur (`BacklightBackend` / `BacklightDevice` in `src/device.rs`).
-- **Standardmäßig ohne aufgezwungene RGB-Effekte**: Beim Einschalten (`Native`) wird die Helligkeit bzw. die Hardware-Stromverwaltung wieder aktiviert, sodass deine eigene Beleuchtungs-Konfiguration erhalten bleibt (optional lässt sich mit `--static R,G,B` auch eine feste Farbe setzen).
+## Features
 
-## Unterstützte Hersteller (OpenRGB-Protokoll-Port)
+- **100% Pure Rust, Zero-Panic Production Code**: Enforced via `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::todo, clippy::unimplemented, clippy::unreachable, clippy::indexing_slicing)]`; panics are permitted only inside `#[cfg(test)]` unit tests.
+- **Vendor-Agnostic & Extensible**: Modular trait-based backend design (`BacklightBackend` / `BacklightDevice` in `src/device.rs`).
+- **Preserves Your Existing Lighting by Default**: On wake (`Native` restore mode), brightness / hardware power management is re-enabled without forcing flashy RGB presets. For Razer Extended devices, firmware regions (`0x0F:0x80`) are queried dynamically and an active effect (`0x0F:0x82`) is restored automatically if a device was stuck in `OFF` (`0x00`). Optionally use `--static R,G,B` to apply a solid color instead.
+
+## Supported Vendors (OpenRGB Protocol Port)
 
 - **Razer (`src/backends/razer.rs`, `src/backends/razer_devices.rs`)**:
-  - 187 portierte Geräte-/Interface-Profile aus OpenRGB (`Standard`, `Linear`, `Extended`, `ExtendedArgb`, `Custom`) für Tastaturen, Mäuse, Keypads, Headsets, Mousepads und Zubehör sowie ein Fallback für weitere Razer-HID-Steuerungsinterfaces.
+  - 187 ported device/interface descriptors from OpenRGB (`Standard`, `Linear`, `Extended`, `ExtendedArgb`, `Custom`) covering keyboards, mice, keypads, headsets, mousemats, and accessories, plus a generic Razer HID interface fallback.
+  - Dynamically queries hardware LED regions (`0x0F:0x80`) on Extended devices (for example Scroll Wheel, Logo, and Numpad zones on multi-zone mice).
 - **Logitech (`src/backends/logitech.rs`)**:
-  - Unified **HID++ 2.0** (`0x8071` RGB Effects Power Management, `0x8070` Color LED Effects, `0x0620` Headset Hostmode, `0x8081` Per-Key) inklusive direkter USB-/Bluetooth-Geräte und Funkempfänger-Slots (`1..=6`), plus Legacy-Fallback für ältere G-Series-/Lightsync-Geräte (z. B. G213, G813/G815, G203).
+  - Unified **HID++ 2.0** (`0x8071` RGB Effects power management, `0x8070` Color LED Effects, `0x0620` Headset Hostmode, `0x8081` Per-Key) for direct USB/Bluetooth devices as well as wireless receiver slots (`1..=6`), plus legacy protocol fallbacks (G213, G813/G815, G203).
 
-## Verwendung
+## Usage
 
 ```powershell
-# Erkannte unterstützte HID-Geräte auflisten
+# List detected compatible HID devices
 hid-backlight-guard.exe --list
 
-# Beleuchtung manuell ausschalten / wiederherstellen
+# Query hardware lighting regions, brightness, and active effect state
+hid-backlight-guard.exe --probe
+
+# Turn peripheral backlights off / on manually
 hid-backlight-guard.exe --off
 hid-backlight-guard.exe --on
 hid-backlight-guard.exe --on --static 255,255,255
 
-# Hintergrund-Überwachung starten (Standard ohne Parameter)
+# Start background display/power monitor (default when no flags are given)
 hid-backlight-guard.exe --background
 hid-backlight-guard.exe --background --silent
 
-# Windows-Autostart in HKCU\...\Run verwalten
+# Manage Windows autostart in HKCU\Software\Microsoft\Windows\CurrentVersion\Run
 hid-backlight-guard.exe --install-autostart
 hid-backlight-guard.exe --uninstall-autostart
 ```
 
-## Entwicklung & Tests
+## Development & Tests
 
 ```powershell
 cargo test
-cargo clippy --all-targets
+cargo clippy --all-targets -- -D warnings
 cargo build --release
 ```
 
-### Neue Hersteller hinzufügen
+### Adding Another Vendor Backend
 
-1. Neues Modul unter `src/backends/<hersteller>.rs` anlegen.
-2. `BacklightBackend` (Geräteerkennung über `hidapi::HidApi`) und `BacklightDevice` (`set_backlight_off` / `set_backlight_on`) implementieren.
-3. Das Backend in `src/backends/mod.rs` innerhalb `default_backends()` registrieren.
+1. Create a new module at `src/backends/<vendor>.rs`.
+2. Implement `BacklightBackend` (device discovery via `hidapi::HidApi`) and `BacklightDevice` (`set_backlight_off` / `set_backlight_on`).
+3. Register the backend in `default_backends()` inside `src/backends/mod.rs`.
