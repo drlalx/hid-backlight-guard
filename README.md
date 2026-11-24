@@ -5,26 +5,36 @@
 
 > [Deutsche Version (README.de.md)](README.de.md)
 
-A lightweight, **pure-Rust** Windows utility that automatically turns off peripheral backlights (keyboards, mice, headsets, mousemats, etc.) when the display turns off or the PC enters sleep mode, and restores them on wake.
+A lightweight, **cross-platform pure-Rust** utility (**Windows, Linux, macOS**) that automatically turns off peripheral backlights (keyboards, mice, headsets, mousemats, etc.) when the display turns off or the system enters sleep mode, and restores them on wake.
 
 ## Features
 
+- **Cross-Platform Native Integration**:
+  - **Windows**: Message-only `WM_POWERBROADCAST` listener + HKCU `Run` autostart + static MSVC CRT (`+crt-static`, no Visual C++ Redistributable required).
+  - **Linux**: Pure-Rust `hidraw` (`linux-native-basic-udev`, zero `libudev` C dependency), D-Bus listener (`systemd-logind` `PrepareForSleep` + `ScreenSaver` `ActiveChanged` for KDE/GNOME/XFCE/Cinnamon/MATE), and `systemd --user` / XDG autostart.
+  - **macOS**: Native Apple `IOKit` listener (`IORegisterForSystemPower` + `IODisplayWrangler`) and `LaunchAgent` autostart.
 - **100% Pure Rust, Zero-Panic Production Code**: Enforced via `[lints.clippy]` in `Cargo.toml` (`unwrap_used`, `expect_used`, `panic`, `panic_in_result_fn`, `todo`, `unimplemented`, `unreachable`, `indexing_slicing`, `undocumented_unsafe_blocks`, `dbg_macro` all set to `deny`); panics are permitted only inside `#[cfg(test)]` unit tests.
-- **Standalone Windows Binary**: Statically links the MSVC C runtime (`+crt-static`), so no Visual C++ Redistributable installation is required.
 - **Vendor-Agnostic & Extensible**: Modular trait-based backend design (`BacklightBackend` / `BacklightDevice` in `src/device.rs`).
 - **Preserves Your Existing Lighting by Default**: On wake (`Native` restore mode), brightness / hardware power management is re-enabled without forcing flashy RGB presets. For Razer Extended devices, firmware regions (`0x0F:0x80`) are queried dynamically and an active effect (`0x0F:0x82`) is restored automatically if a device was stuck in `OFF` (`0x00`). Optionally use `--static R,G,B` to apply a solid color instead.
 
 ## Installation
 
-### Prebuilt Binaries (Windows)
+### Prebuilt Binaries
 
-Download the latest archive (`x86_64-pc-windows-msvc` or `aarch64-pc-windows-msvc`) together with its `.sha256` checksum from the [GitHub Releases](https://github.com/drlalx/hid-backlight-guard/releases) page and extract `hid-backlight-guard.exe`.
+Download the archive for your OS (`x86_64-unknown-linux-musl`, `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-pc-windows-msvc`, or `aarch64-pc-windows-msvc`) together with its `.sha256` checksum from the [GitHub Releases](https://github.com/drlalx/hid-backlight-guard/releases) page.
+
+- **Linux (non-root HID access):** Install the bundled [60-hid-backlight-guard.rules](packaging/60-hid-backlight-guard.rules):
+  ```bash
+  sudo cp 60-hid-backlight-guard.rules /etc/udev/rules.d/
+  sudo udevadm control --reload-rules && sudo udevadm trigger
+  ```
+- **macOS:** Grant **Input Monitoring** permission to your terminal / `hid-backlight-guard` in *System Settings → Privacy & Security → Input Monitoring*.
 
 ### Build from Source
 
-Requires Rust `1.88+` (Edition 2024) on Windows:
+Requires Rust `1.88+` (Edition 2024):
 
-```powershell
+```bash
 git clone https://github.com/drlalx/hid-backlight-guard.git
 cd hid-backlight-guard
 cargo build --release

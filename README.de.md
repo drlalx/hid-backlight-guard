@@ -5,26 +5,36 @@
 
 > [English version (README.md)](README.md)
 
-Ein schlankes, komplett in **pure Rust** geschriebenes Windows-Dienstprogramm, das die Hintergrundbeleuchtung unterstützter HID-Peripheriegeräte (Tastaturen, Mäuse, Headsets, Mousepads usw.) automatisch ausschaltet, sobald der Bildschirm abgeschaltet wird oder der PC in den Energiesparmodus wechselt – und beim Aufwecken wiederherstellt.
+Ein schlankes, **plattformübergreifendes Pure-Rust**-Dienstprogramm (**Windows, Linux, macOS**), das die Hintergrundbeleuchtung unterstützter HID-Peripheriegeräte (Tastaturen, Mäuse, Headsets, Mousepads usw.) automatisch ausschaltet, sobald der Bildschirm abgeschaltet wird oder das System in den Energiesparmodus wechselt – und beim Aufwecken wiederherstellt.
 
 ## Merkmale
 
+- **Plattformübergreifende native OS-Integration**:
+  - **Windows**: Message-only `WM_POWERBROADCAST`-Listener + HKCU `Run`-Autostart + statische MSVC-CRT (`+crt-static`, kein Visual C++ Redistributable nötig).
+  - **Linux**: Pure-Rust `hidraw` (`linux-native-basic-udev`, keine `libudev`-C-Abhängigkeit), D-Bus-Listener (`systemd-logind` `PrepareForSleep` + `ScreenSaver` `ActiveChanged` für KDE/GNOME/XFCE/Cinnamon/MATE) und `systemd --user` / XDG-Autostart.
+  - **macOS**: Nativer Apple-`IOKit`-Listener (`IORegisterForSystemPower` + `IODisplayWrangler`) und `LaunchAgent`-Autostart.
 - **Pure Rust, Zero-Panic in Produktivcode**: Keine `.unwrap()`, `.expect()`, `panic!()` oder ungeprüften Index-Zugriffe im Produktivcode (zentral über `[lints.clippy]` in `Cargo.toml` erzwungen; Panics sind ausschließlich in `#[cfg(test)]`-Unittests erlaubt).
-- **Eigenständige Windows-Binary**: Statische Verlinkung der MSVC C-Runtime (`+crt-static`), sodass kein Visual C++ Redistributable benötigt wird.
 - **Herstellerneutral & erweiterbar**: Modulare Trait-Architektur (`BacklightBackend` / `BacklightDevice` in `src/device.rs`).
 - **Standardmäßig ohne aufgezwungene RGB-Effekte**: Beim Einschalten (`Native`) wird die Helligkeit bzw. die Hardware-Stromverwaltung wieder aktiviert, sodass deine eigene Beleuchtungs-Konfiguration erhalten bleibt. Bei Razer-Extended-Geräten werden Hardware-Regionen (`0x0F:0x80`) dynamisch abgefragt und aktive Effekte (`0x0F:0x82`) wiederhergestellt, falls ein Gerät im Modus `OFF` (`0x00`) stand (optional lässt sich mit `--static R,G,B` auch eine feste Farbe setzen).
 
 ## Installation
 
-### Vorgefertigte Binaries (Windows)
+### Vorgefertigte Binaries
 
-Lade das aktuelle Archiv (`x86_64-pc-windows-msvc` oder `aarch64-pc-windows-msvc`) samt `.sha256`-Prüfsumme von den [GitHub Releases](https://github.com/drlalx/hid-backlight-guard/releases) herunter und entpacke `hid-backlight-guard.exe`.
+Lade das passende Archiv (`x86_64-unknown-linux-musl`, `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-pc-windows-msvc` oder `aarch64-pc-windows-msvc`) samt `.sha256`-Prüfsumme von den [GitHub Releases](https://github.com/drlalx/hid-backlight-guard/releases) herunter.
+
+- **Linux (HID-Zugriff ohne `root`):** Die mitgelieferte [60-hid-backlight-guard.rules](packaging/60-hid-backlight-guard.rules) installieren:
+  ```bash
+  sudo cp 60-hid-backlight-guard.rules /etc/udev/rules.d/
+  sudo udevadm control --reload-rules && sudo udevadm trigger
+  ```
+- **macOS:** In *Systemeinstellungen → Datenschutz & Sicherheit → Eingabeüberwachung* dem Terminal bzw. `hid-backlight-guard` die Berechtigung erteilen.
 
 ### Aus dem Quellcode bauen
 
-Benötigt Rust `1.88+` (Edition 2024) unter Windows:
+Benötigt Rust `1.88+` (Edition 2024):
 
-```powershell
+```bash
 git clone https://github.com/drlalx/hid-backlight-guard.git
 cd hid-backlight-guard
 cargo build --release

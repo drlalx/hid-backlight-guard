@@ -1,0 +1,9 @@
+# hid-backlight-guard udev rules for non-root HID access on Linux.
+# Install to /etc/udev/rules.d/60-hid-backlight-guard.rules and run:
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# Razer Inc. (VID 0x1532)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", MODE="0660", TAG+="uaccess"
+
+# Logitech (VID 0x046d)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", MODE="0660", TAG+="uaccess"

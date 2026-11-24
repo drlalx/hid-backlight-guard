@@ -12,19 +12,39 @@ permissions:
 jobs:
   build:
     name: Build (${{ matrix.target }})
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            archive: tar.gz
+            bin: hid-backlight-guard
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+            bin: hid-backlight-guard
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+            bin: hid-backlight-guard
           - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
             bin: hid-backlight-guard.exe
           - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
             bin: hid-backlight-guard.exe
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install musl toolchain (Linux)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -39,7 +59,27 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: Package release archive (Unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          ASSET_NAME="hid-backlight-guard-${VERSION}-${{ matrix.target }}"
+          mkdir -p "dist/${ASSET_NAME}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "dist/${ASSET_NAME}/"
+          cp README.md README.de.md LICENSE CHANGELOG.md "dist/${ASSET_NAME}/"
+          if [[ "${{ matrix.target }}" == *linux* ]]; then
+            cp packaging/60-hid-backlight-guard.rules "dist/${ASSET_NAME}/"
+          fi
+          tar -C dist -czf "${ASSET_NAME}.tar.gz" "${ASSET_NAME}"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${ASSET_NAME}.tar.gz" > "${ASSET_NAME}.tar.gz.sha256"
+          else
+            shasum -a 256 "${ASSET_NAME}.tar.gz" > "${ASSET_NAME}.tar.gz.sha256"
+          fi
+
       - name: Package release archive (Windows)
+        if: matrix.archive == 'zip'
         shell: pwsh
         run: |
           $version = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "dev" }
@@ -56,6 +96,8 @@ jobs:
         with:
           name: hid-backlight-guard-${{ matrix.target }}
           path: |
+            hid-backlight-guard-*.tar.gz
+            hid-backlight-guard-*.tar.gz.sha256
             hid-backlight-guard-*.zip
             hid-backlight-guard-*.zip.sha256
 
@@ -77,13 +119,14 @@ jobs:
 
       - name: Generate combined SHA256SUMS.txt
         working-directory: release-assets
-        run: sha256sum *.zip > SHA256SUMS.txt
+        run: sha256sum *.tar.gz *.zip > SHA256SUMS.txt
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
+            release-assets/*.tar.gz
             release-assets/*.zip
             release-assets/*.sha256
             release-assets/SHA256SUMS.txt

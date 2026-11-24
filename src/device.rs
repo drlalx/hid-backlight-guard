@@ -95,7 +95,7 @@ pub struct DeviceInfo {
     pub protocol: String,
 }
 
-/// Unified error type for HID backlight discovery, protocol I/O, and Windows hooks.
+/// Unified error type for HID backlight discovery, protocol I/O, and OS integration hooks.
 #[derive(Debug)]
 pub enum GuardError {
     /// Underlying `hidapi` error.
@@ -106,6 +106,13 @@ pub enum GuardError {
         op: &'static str,
         /// Win32 error code returned by the API.
         code: u32,
+    },
+    /// OS-specific integration error (Linux D-Bus / systemd, macOS IOKit / LaunchAgent, etc.).
+    Platform {
+        /// Subsystem or operation name.
+        op: &'static str,
+        /// Human-readable error detail.
+        detail: String,
     },
     /// Vendor HID protocol error or invalid packet framing.
     Protocol(&'static str),
@@ -120,6 +127,7 @@ impl fmt::Display for GuardError {
         match self {
             Self::Hid(err) => write!(f, "HID error: {err}"),
             Self::Win32 { op, code } => write!(f, "Win32 {op} failed (error {code})"),
+            Self::Platform { op, detail } => write!(f, "Platform {op} failed: {detail}"),
             Self::Protocol(msg) => write!(f, "Protocol error: {msg}"),
             Self::InvalidArgument(msg) => write!(f, "Invalid argument: {msg}"),
             Self::Io(err) => write!(f, "I/O error: {err}"),

@@ -234,12 +234,11 @@ impl BacklightDevice for RazerBacklightDevice {
 
 impl RazerBacklightDevice {
     fn cache_current_extended_effect(&self, led_id: u8) {
-        if let Some(effect) = self.query_effect_extended(led_id) {
-            if effect.get(2).copied().unwrap_or(0) != 0x00 {
-                if let Ok(mut guard) = saved_effects_map().lock() {
-                    guard.insert((self.info.path.clone(), led_id), effect);
-                }
-            }
+        if let Some(effect) = self.query_effect_extended(led_id)
+            && effect.get(2).copied().unwrap_or(0) != 0x00
+            && let Ok(mut guard) = saved_effects_map().lock()
+        {
+            guard.insert((self.info.path.clone(), led_id), effect);
         }
     }
 
@@ -701,20 +700,20 @@ fn find_matching_spec(dev_info: &HidDeviceInfo) -> Option<RazerDeviceSpec> {
         if spec.pid != pid {
             continue;
         }
-        if let Some(expected_iface) = spec.interface {
-            if dev_info.interface_number() != expected_iface {
-                continue;
-            }
+        if let Some(expected_iface) = spec.interface
+            && dev_info.interface_number() != expected_iface
+        {
+            continue;
         }
-        if let Some(expected_up) = spec.usage_page {
-            if dev_info.usage_page() != expected_up {
-                continue;
-            }
+        if let Some(expected_up) = spec.usage_page
+            && dev_info.usage_page() != expected_up
+        {
+            continue;
         }
-        if let Some(expected_u) = spec.usage {
-            if dev_info.usage() != expected_u {
-                continue;
-            }
+        if let Some(expected_u) = spec.usage
+            && dev_info.usage() != expected_u
+        {
+            continue;
         }
         return Some(*spec);
     }
@@ -756,6 +755,7 @@ pub fn calculate_crc(report: &[u8; RAZER_REPORT_LEN]) -> u8 {
     crc
 }
 
+/// Builds a 91-byte Razer USB HID feature report with computed XOR CRC.
 pub fn build_report(
     report_id: u8,
     tx_id: u8,
@@ -781,6 +781,7 @@ pub fn build_report(
     Ok(buf)
 }
 
+/// Builds a Razer Standard-matrix brightness report (`0x03:0x03`).
 pub fn build_brightness_standard_report(
     report_id: u8,
     tx_id: u8,
@@ -798,6 +799,7 @@ pub fn build_brightness_standard_report(
     )
 }
 
+/// Builds a Razer Extended-matrix brightness report (`0x0F:0x04`).
 pub fn build_brightness_extended_report(
     report_id: u8,
     tx_id: u8,
@@ -815,6 +817,7 @@ pub fn build_brightness_extended_report(
     )
 }
 
+/// Builds a Razer Extended-matrix spectrum-cycle effect report (`0x0F:0x02`).
 pub fn build_mode_spectrum_cycle_extended_report(
     report_id: u8,
     tx_id: u8,
@@ -824,6 +827,7 @@ pub fn build_mode_spectrum_cycle_extended_report(
     build_report(report_id, tx_id, 0x0F, 0x02, 0x06, &[storage, led_id, 0x03])
 }
 
+/// Builds a Razer Standard-matrix static color report (`0x03:0x0A`).
 pub fn build_mode_static_standard_report(
     report_id: u8,
     tx_id: u8,
@@ -834,6 +838,7 @@ pub fn build_mode_static_standard_report(
     build_report(report_id, tx_id, 0x03, 0x0A, 0x04, &[0x06, r, g, b])
 }
 
+/// Builds a Razer Extended-matrix static color report (`0x0F:0x02`).
 pub fn build_mode_static_extended_report(
     report_id: u8,
     tx_id: u8,
@@ -853,6 +858,7 @@ pub fn build_mode_static_extended_report(
     )
 }
 
+/// Builds a Razer legacy LED RGB color report (`0x03:0x01`).
 pub fn build_set_led_rgb_report(
     report_id: u8,
     tx_id: u8,
@@ -872,6 +878,7 @@ pub fn build_set_led_rgb_report(
     )
 }
 
+/// Builds a Razer legacy LED effect report (`0x03:0x02`).
 pub fn build_set_led_effect_report(
     report_id: u8,
     tx_id: u8,

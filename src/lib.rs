@@ -1,5 +1,6 @@
-//! Pure-Rust Windows daemon and library for automatically turning off HID peripheral
-//! backlights when the display turns off or the system suspends, and restoring them on wake.
+//! Cross-platform pure-Rust daemon and library (Windows, Linux, macOS) for automatically
+//! turning off HID peripheral backlights when the display turns off or the system suspends,
+//! and restoring them on wake.
 
 #![cfg_attr(
     test,

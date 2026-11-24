@@ -11,13 +11,13 @@
 
 ## Projekt-Besonderheiten
 
-- **Plattform:** Windows-natives CLI-/Hintergrund-Tool (`windows-sys` Win32 Registry & `WM_POWERBROADCAST`).
-- **Unsafe-Policy:** `unsafe_code = "deny"` in `Cargo.toml`; nur für zwingende Win32-FFI-Aufrufe in `src/autostart.rs` und `src/power_monitor.rs` mit lokalem `#[allow(unsafe_code)]` und `// SAFETY:`-Kommentar erlaubt (`clippy::undocumented_unsafe_blocks = "deny"`).
+- **Plattform:** Plattformübergreifendes CLI-/Hintergrund-Tool für **Windows** (`windows-sys` Win32 Registry & `WM_POWERBROADCAST`), **Linux** (`hidapi` `linux-native-basic-udev`, D-Bus via `zbus`, `systemd --user` / XDG) und **macOS** (Apple `IOKit` / `CoreFoundation` FFI & `LaunchAgent`).
+- **Unsafe-Policy:** `unsafe_code = "deny"` in `Cargo.toml`; nur für zwingende OS-FFI-Aufrufe in `src/autostart.rs` (Windows) und `src/power_monitor.rs` (Windows & macOS) mit lokalem `#[allow(unsafe_code)]` und `// SAFETY:`-Kommentar erlaubt (`clippy::undocumented_unsafe_blocks = "deny"`).
 - **Lizenz:** `GPL-2.0-or-later` (wegen portierter OpenRGB-Protokoll-/Gerätetabellen); alle Drittanbieter-Dependencies bleiben permissiv (`deny.toml` + `tests/license_compliance.rs`).
 
 ## Build-, Test- & Compliance-Befehle
 
-- **Build (Windows):** `cargo build`
+- **Build:** `cargo build`
 - **Formatierung prüfen:** `cargo fmt --all -- --check`
 - **Linting (No-Panic & Safety):** `cargo clippy --all-targets -- -D warnings`
 - **Tests ausführen:** `cargo test --all-targets`

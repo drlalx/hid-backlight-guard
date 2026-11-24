@@ -4,18 +4,18 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 authors = ["Alexander Drichel"]
-description = "Lightweight pure-Rust Windows daemon that turns peripheral backlights off when the display turns off or PC suspends"
+description = "Lightweight cross-platform pure-Rust daemon that turns peripheral backlights off when the display turns off or the system suspends"
 readme = "README.md"
 homepage = "https://github.com/drlalx/hid-backlight-guard"
 repository = "https://github.com/drlalx/hid-backlight-guard"
 license = "GPL-2.0-or-later"
-keywords = ["hid", "backlight", "razer", "logitech", "windows"]
-categories = ["command-line-utilities", "hardware-support", "os::windows-apis"]
+keywords = ["hid", "backlight", "razer", "logitech", "rgb"]
+categories = ["command-line-utilities", "hardware-support"]
 
 [dependencies]
-hidapi = "2.6"
+hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev", "macos-shared-device"] }
 
-[dependencies.windows-sys]
+[target.'cfg(windows)'.dependencies.windows-sys]
 version = "0.59"
 features = [
     "Win32_Foundation",
@@ -26,6 +26,9 @@ features = [
     "Win32_System_Registry",
     "Win32_UI_WindowsAndMessaging",
 ]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", features = ["blocking-api"] }
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }

@@ -110,31 +110,31 @@ impl BacklightBackend for LogitechBackend {
             }
 
             // 3. Fallback to known legacy Logitech protocols when HID++ 2.0 IRoot did not answer.
-            if let Some(legacy_kind) = match_legacy_pid(pid, usage_page, usage) {
-                if let Ok(legacy_handle) = api.open_path(dev_info.path()) {
-                    let product_name = dev_info
-                        .product_string()
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or("Logitech Legacy RGB Device")
-                        .to_owned();
-                    let kind = infer_device_kind(&product_name, legacy_kind.default_kind());
-                    let info = DeviceInfo {
-                        vendor: Vendor::Logitech,
-                        name: product_name,
-                        kind,
-                        vid: LOGITECH_VID,
-                        pid,
-                        path: path.clone(),
-                        protocol: legacy_kind.protocol_label().to_owned(),
-                    };
-                    let serial = dev_info.serial_number().unwrap_or_default().to_owned();
-                    if seen_nodes.insert((pid, HIDPP20_DEFAULT_DEVICE_INDEX, serial)) {
-                        devices.push(Box::new(LegacyLogitechDevice {
-                            handle: legacy_handle,
-                            variant: legacy_kind,
-                            info,
-                        }));
-                    }
+            if let Some(legacy_kind) = match_legacy_pid(pid, usage_page, usage)
+                && let Ok(legacy_handle) = api.open_path(dev_info.path())
+            {
+                let product_name = dev_info
+                    .product_string()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("Logitech Legacy RGB Device")
+                    .to_owned();
+                let kind = infer_device_kind(&product_name, legacy_kind.default_kind());
+                let info = DeviceInfo {
+                    vendor: Vendor::Logitech,
+                    name: product_name,
+                    kind,
+                    vid: LOGITECH_VID,
+                    pid,
+                    path: path.clone(),
+                    protocol: legacy_kind.protocol_label().to_owned(),
+                };
+                let serial = dev_info.serial_number().unwrap_or_default().to_owned();
+                if seen_nodes.insert((pid, HIDPP20_DEFAULT_DEVICE_INDEX, serial)) {
+                    devices.push(Box::new(LegacyLogitechDevice {
+                        handle: legacy_handle,
+                        variant: legacy_kind,
+                        info,
+                    }));
                 }
             }
         }
@@ -277,15 +277,15 @@ fn probe_hidpp20_slot(
 }
 
 fn probe_secondary_rgb_page(handle: &HidDevice, device_index: u8) -> (u8, Option<RgbPageKind>) {
-    if let Some(idx) = hidpp20_get_feature_index(handle, device_index, FEAT_CENTURION_RGB, 60) {
-        if idx != 0 {
-            return (idx, Some(RgbPageKind::Centurion0600));
-        }
+    if let Some(idx) = hidpp20_get_feature_index(handle, device_index, FEAT_CENTURION_RGB, 60)
+        && idx != 0
+    {
+        return (idx, Some(RgbPageKind::Centurion0600));
     }
-    if let Some(idx) = hidpp20_get_feature_index(handle, device_index, FEAT_COLOR_LED_EFFECTS, 60) {
-        if idx != 0 {
-            return (idx, Some(RgbPageKind::ColorLed8070));
-        }
+    if let Some(idx) = hidpp20_get_feature_index(handle, device_index, FEAT_COLOR_LED_EFFECTS, 60)
+        && idx != 0
+    {
+        return (idx, Some(RgbPageKind::ColorLed8070));
     }
     (0, None)
 }
@@ -935,6 +935,7 @@ impl BacklightDevice for LegacyLogitechDevice {
     }
 }
 
+/// Builds a 20-byte legacy Logitech G-series/Lightsync mode packet.
 pub fn build_legacy_mode_packet(
     feat_idx: u8,
     cmd: u8,

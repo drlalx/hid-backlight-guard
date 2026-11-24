@@ -158,7 +158,7 @@ fn print_help() {
                --off                  Beleuchtung aller erkannten Geräte ausschalten\n\
                --on                   Beleuchtung aller erkannten Geräte wiederherstellen\n\
                --static R,G,B         Beim Einschalten statische Farbe setzen (z.B. 255,255,255)\n\
-               --install-autostart    Autostart in Windows-Registry eintragen\n\
+               --install-autostart    Autostart im OS eintragen (Registry / systemd / LaunchAgent)\n\
                --uninstall-autostart  Autostart-Eintrag entfernen\n\
            -h, --help                 Diese Hilfe anzeigen",
         env!("CARGO_PKG_VERSION")
