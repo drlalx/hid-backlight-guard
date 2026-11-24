@@ -1,12 +1,5 @@
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::todo,
-    clippy::unimplemented,
-    clippy::unreachable,
-    clippy::indexing_slicing
-)]
+//! Command-line entry point for `hid-backlight-guard`.
+
 #![cfg_attr(
     test,
     allow(
@@ -56,7 +49,9 @@ fn parse_static_rgb(spec: &str) -> Result<RestoreMode, GuardError> {
         .next()
         .ok_or(GuardError::InvalidArgument("erwartetes Format: R,G,B"))?;
     if parts.next().is_some() {
-        return Err(GuardError::InvalidArgument("zu viele Farbkomponenten; erwartet R,G,B"));
+        return Err(GuardError::InvalidArgument(
+            "zu viele Farbkomponenten; erwartet R,G,B",
+        ));
     }
 
     let r = r_str

@@ -1,14 +1,34 @@
 # hid-backlight-guard
 
+[![CI](https://github.com/drlalx/hid-backlight-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/drlalx/hid-backlight-guard/actions/workflows/ci.yml)
+[![License: GPL v2+](https://img.shields.io/badge/License-GPL--2.0--or--later-blue.svg)](LICENSE)
+
 > [English version (README.md)](README.md)
 
 Ein schlankes, komplett in **pure Rust** geschriebenes Windows-Dienstprogramm, das die Hintergrundbeleuchtung unterstützter HID-Peripheriegeräte (Tastaturen, Mäuse, Headsets, Mousepads usw.) automatisch ausschaltet, sobald der Bildschirm abgeschaltet wird oder der PC in den Energiesparmodus wechselt – und beim Aufwecken wiederherstellt.
 
 ## Merkmale
 
-- **Pure Rust, Zero-Panic in Produktivcode**: Keine `.unwrap()`, `.expect()`, `panic!()` oder ungeprüften Index-Zugriffe im Produktivcode (durch `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::todo, clippy::unimplemented, clippy::unreachable, clippy::indexing_slicing)]` erzwungen; Panics sind ausschließlich in `#[cfg(test)]`-Unittests erlaubt).
+- **Pure Rust, Zero-Panic in Produktivcode**: Keine `.unwrap()`, `.expect()`, `panic!()` oder ungeprüften Index-Zugriffe im Produktivcode (zentral über `[lints.clippy]` in `Cargo.toml` erzwungen; Panics sind ausschließlich in `#[cfg(test)]`-Unittests erlaubt).
+- **Eigenständige Windows-Binary**: Statische Verlinkung der MSVC C-Runtime (`+crt-static`), sodass kein Visual C++ Redistributable benötigt wird.
 - **Herstellerneutral & erweiterbar**: Modulare Trait-Architektur (`BacklightBackend` / `BacklightDevice` in `src/device.rs`).
 - **Standardmäßig ohne aufgezwungene RGB-Effekte**: Beim Einschalten (`Native`) wird die Helligkeit bzw. die Hardware-Stromverwaltung wieder aktiviert, sodass deine eigene Beleuchtungs-Konfiguration erhalten bleibt. Bei Razer-Extended-Geräten werden Hardware-Regionen (`0x0F:0x80`) dynamisch abgefragt und aktive Effekte (`0x0F:0x82`) wiederhergestellt, falls ein Gerät im Modus `OFF` (`0x00`) stand (optional lässt sich mit `--static R,G,B` auch eine feste Farbe setzen).
+
+## Installation
+
+### Vorgefertigte Binaries (Windows)
+
+Lade das aktuelle Archiv (`x86_64-pc-windows-msvc` oder `aarch64-pc-windows-msvc`) samt `.sha256`-Prüfsumme von den [GitHub Releases](https://github.com/drlalx/hid-backlight-guard/releases) herunter und entpacke `hid-backlight-guard.exe`.
+
+### Aus dem Quellcode bauen
+
+Benötigt Rust `1.88+` (Edition 2024) unter Windows:
+
+```powershell
+git clone https://github.com/drlalx/hid-backlight-guard.git
+cd hid-backlight-guard
+cargo build --release
+```
 
 ## Unterstützte Hersteller (OpenRGB-Protokoll-Port)
 
@@ -44,8 +64,9 @@ hid-backlight-guard.exe --uninstall-autostart
 ## Entwicklung & Tests
 
 ```powershell
-cargo test
+cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
 cargo build --release
 ```
 
@@ -54,3 +75,8 @@ cargo build --release
 1. Neues Modul unter `src/backends/<hersteller>.rs` anlegen.
 2. `BacklightBackend` (Geräteerkennung über `hidapi::HidApi`) und `BacklightDevice` (`set_backlight_off` / `set_backlight_on`) implementieren.
 3. Das Backend in `src/backends/mod.rs` innerhalb `default_backends()` registrieren.
+
+## Lizenz
+
+Lizenziert unter der [GNU General Public License v2.0 or later](LICENSE) (`GPL-2.0-or-later`).
+Protokolldefinitionen und Geräte-Deskriptoren basieren auf [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB).

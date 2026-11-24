@@ -6,10 +6,11 @@ use std::time::{Duration, Instant};
 use hidapi::{DeviceInfo as HidDeviceInfo, HidApi, HidDevice};
 
 use crate::device::{
-    copy_into_slice, write_u8, BacklightBackend, BacklightDevice, DeviceInfo, DeviceKind,
-    GuardError, RestoreMode, Vendor,
+    BacklightBackend, BacklightDevice, DeviceInfo, DeviceKind, GuardError, RestoreMode, Vendor,
+    copy_into_slice, write_u8,
 };
 
+/// Logitech USB Vendor ID (`0x046D`).
 pub const LOGITECH_VID: u16 = 0x046D;
 
 const HIDPP_SHORT_REPORT_ID: u8 = 0x10;
@@ -80,7 +81,8 @@ impl BacklightBackend for LogitechBackend {
             let usage = dev_info.usage();
 
             // 1. Try direct HID++ 2.0 on device_index = 0xFF.
-            if let Some(dev) = probe_hidpp20_slot(dev_info, &path, HIDPP20_DEFAULT_DEVICE_INDEX, handle)
+            if let Some(dev) =
+                probe_hidpp20_slot(dev_info, &path, HIDPP20_DEFAULT_DEVICE_INDEX, handle)
             {
                 let serial = dev_info.serial_number().unwrap_or_default().to_owned();
                 if seen_nodes.insert((pid, HIDPP20_DEFAULT_DEVICE_INDEX, serial)) {
@@ -187,7 +189,8 @@ fn probe_hidpp20_slot(
     } else {
         25
     };
-    let idx_feature_set = hidpp20_get_feature_index(&handle, device_index, FEAT_FEATURE_SET, timeout)?;
+    let idx_feature_set =
+        hidpp20_get_feature_index(&handle, device_index, FEAT_FEATURE_SET, timeout)?;
     if idx_feature_set == 0 {
         return None;
     }
@@ -211,7 +214,8 @@ fn probe_hidpp20_slot(
     let idx_perkey_v1 =
         hidpp20_get_feature_index(&handle, device_index, FEAT_PER_KEY_V1, 60).unwrap_or(0);
 
-    if idx_rgb_effects == 0 && idx_headset_hostmode == 0 && idx_perkey_v1 == 0 && idx_perkey_v2 == 0 {
+    if idx_rgb_effects == 0 && idx_headset_hostmode == 0 && idx_perkey_v1 == 0 && idx_perkey_v2 == 0
+    {
         // HID++ 2.0 non-illuminated mouse/keyboard (e.g., office peripherals): skip cleanly.
         return None;
     }
@@ -356,9 +360,14 @@ fn discover_zones(
             RgbPageKind::RgbEffects8071 | RgbPageKind::Centurion0600 => 0x00,
             RgbPageKind::ColorLed8070 => 0x10,
         };
-        let Ok(Some(c_resp)) =
-            hidpp20_send_acked(handle, device_index, idx_rgb, fn_cluster, &cluster_query, 80)
-        else {
+        let Ok(Some(c_resp)) = hidpp20_send_acked(
+            handle,
+            device_index,
+            idx_rgb,
+            fn_cluster,
+            &cluster_query,
+            80,
+        ) else {
             continue;
         };
 
@@ -486,7 +495,9 @@ impl BacklightDevice for Hidpp20BacklightDevice {
             return self.set_perkey_off_best_effort();
         }
 
-        Err(GuardError::Protocol("no controllable Logitech RGB feature found"))
+        Err(GuardError::Protocol(
+            "no controllable Logitech RGB feature found",
+        ))
     }
 
     fn set_backlight_on(&mut self, restore: RestoreMode) -> Result<(), GuardError> {
@@ -516,7 +527,11 @@ impl Hidpp20BacklightDevice {
             }
         };
 
-        let send_len = if page == RgbPageKind::ColorLed8070 { 2 } else { 3 };
+        let send_len = if page == RgbPageKind::ColorLed8070 {
+            2
+        } else {
+            3
+        };
         let data = payload
             .get(..send_len)
             .ok_or(GuardError::Protocol("invalid SW control slice"))?;

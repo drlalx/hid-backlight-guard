@@ -5,10 +5,10 @@ use std::sync::{Mutex, OnceLock};
 
 use hidapi::{DeviceInfo as HidDeviceInfo, HidApi, HidDevice};
 
-use crate::backends::razer_devices::{RazerDeviceSpec, RazerMatrixType, RAZER_DEVICES, RAZER_VID};
+use crate::backends::razer_devices::{RAZER_DEVICES, RAZER_VID, RazerDeviceSpec, RazerMatrixType};
 use crate::device::{
-    write_u8, BacklightBackend, BacklightDevice, DeviceInfo, DeviceKind, GuardError, RestoreMode,
-    Vendor,
+    BacklightBackend, BacklightDevice, DeviceInfo, DeviceKind, GuardError, RestoreMode, Vendor,
+    write_u8,
 };
 
 const RAZER_REPORT_LEN: usize = 91;
@@ -216,7 +216,10 @@ impl BacklightDevice for RazerBacklightDevice {
             }
             if let Some(eff) = self.query_effect_extended(led) {
                 let hex: Vec<String> = eff.iter().map(|b| format!("{b:02X}")).collect();
-                lines.push(format!("Effect Extended (led=0x{led:02X}): [{}]", hex.join(" ")));
+                lines.push(format!(
+                    "Effect Extended (led=0x{led:02X}): [{}]",
+                    hex.join(" ")
+                ));
             }
         }
         if let Some(br_std) = self.query_brightness_standard(self.spec.led_id) {
@@ -785,7 +788,14 @@ pub fn build_brightness_standard_report(
     led_id: u8,
     brightness: u8,
 ) -> Result<[u8; RAZER_REPORT_LEN], GuardError> {
-    build_report(report_id, tx_id, 0x03, 0x03, 0x03, &[storage, led_id, brightness])
+    build_report(
+        report_id,
+        tx_id,
+        0x03,
+        0x03,
+        0x03,
+        &[storage, led_id, brightness],
+    )
 }
 
 pub fn build_brightness_extended_report(
@@ -795,7 +805,14 @@ pub fn build_brightness_extended_report(
     led_id: u8,
     brightness: u8,
 ) -> Result<[u8; RAZER_REPORT_LEN], GuardError> {
-    build_report(report_id, tx_id, 0x0F, 0x04, 0x03, &[storage, led_id, brightness])
+    build_report(
+        report_id,
+        tx_id,
+        0x0F,
+        0x04,
+        0x03,
+        &[storage, led_id, brightness],
+    )
 }
 
 pub fn build_mode_spectrum_cycle_extended_report(
@@ -862,7 +879,14 @@ pub fn build_set_led_effect_report(
     led_id: u8,
     effect: u8,
 ) -> Result<[u8; RAZER_REPORT_LEN], GuardError> {
-    build_report(report_id, tx_id, 0x03, 0x02, 0x03, &[storage, led_id, effect])
+    build_report(
+        report_id,
+        tx_id,
+        0x03,
+        0x02,
+        0x03,
+        &[storage, led_id, effect],
+    )
 }
 
 #[cfg(test)]

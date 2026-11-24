@@ -1,9 +1,16 @@
 [package]
 name = "hid-backlight-guard"
 version = "0.1.0"
-edition = "2021"
-description = "Lightweight pure-Rust daemon that turns peripheral backlights off when the display turns off or PC suspends"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Alexander Drichel"]
+description = "Lightweight pure-Rust Windows daemon that turns peripheral backlights off when the display turns off or PC suspends"
+readme = "README.md"
+homepage = "https://github.com/drlalx/hid-backlight-guard"
+repository = "https://github.com/drlalx/hid-backlight-guard"
 license = "GPL-2.0-or-later"
+keywords = ["hid", "backlight", "razer", "logitech", "windows"]
+categories = ["command-line-utilities", "hardware-support", "os::windows-apis"]
 
 [dependencies]
 hidapi = "2.6"
@@ -20,8 +27,29 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
+[dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+panic = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic_in_result_fn = "deny"
+unimplemented = "deny"
+todo = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+undocumented_unsafe_blocks = "deny"
+dbg_macro = "deny"
+
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = true
 codegen-units = 1
+panic = "abort"
 strip = true

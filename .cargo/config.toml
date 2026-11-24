@@ -1,0 +1,7 @@
+# Windows: link the C runtime statically so the .exe does not require
+# vcruntime140.dll (Visual C++ Redistributable). UCRT ships with Windows 10+.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly security & dependency audit (Mondays 06:00 UTC)
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deny:
+    name: cargo-deny (licenses, advisories, bans, sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  test:
+    name: Build & Test (windows-latest)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format Check
+        run: cargo fmt --all -- --check
+
+      - name: Cargo Check
+        run: cargo check --all-targets
+
+      - name: Clippy (No-Panic & Safety Enforcement)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Cargo Test (includes license & advisory checks)
+        run: cargo test --all-targets -- --nocapture
+
+      - name: Build Release Binary
+        run: cargo build --release

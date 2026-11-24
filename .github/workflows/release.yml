@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            bin: hid-backlight-guard.exe
+          - target: aarch64-pc-windows-msvc
+            bin: hid-backlight-guard.exe
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package release archive (Windows)
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "dev" }
+          $assetName = "hid-backlight-guard-$version-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path "dist/$assetName" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin }}" "dist/$assetName/"
+          Copy-Item README.md, README.de.md, LICENSE, CHANGELOG.md "dist/$assetName/"
+          Compress-Archive -Path "dist/$assetName/*" -DestinationPath "$assetName.zip"
+          $hash = (Get-FileHash "$assetName.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $assetName.zip" | Out-File -Encoding ascii "$assetName.zip.sha256"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hid-backlight-guard-${{ matrix.target }}
+          path: |
+            hid-backlight-guard-*.zip
+            hid-backlight-guard-*.zip.sha256
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: hid-backlight-guard-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Generate combined SHA256SUMS.txt
+        working-directory: release-assets
+        run: sha256sum *.zip > SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-assets/*.zip
+            release-assets/*.sha256
+            release-assets/SHA256SUMS.txt

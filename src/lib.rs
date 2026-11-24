@@ -1,12 +1,6 @@
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::todo,
-    clippy::unimplemented,
-    clippy::unreachable,
-    clippy::indexing_slicing
-)]
+//! Pure-Rust Windows daemon and library for automatically turning off HID peripheral
+//! backlights when the display turns off or the system suspends, and restoring them on wake.
+
 #![cfg_attr(
     test,
     allow(

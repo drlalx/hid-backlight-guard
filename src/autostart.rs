@@ -2,8 +2,8 @@
 
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::System::Registry::{
-    RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
-    KEY_SET_VALUE, REG_SZ,
+    HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ, RegCloseKey, RegDeleteValueW, RegOpenKeyExW,
+    RegSetValueExW,
 };
 
 use crate::device::GuardError;
@@ -16,6 +16,7 @@ fn to_wide_null(s: &str) -> Vec<u16> {
 }
 
 /// Registers the current executable with `--background --silent` under HKCU Run.
+#[allow(unsafe_code)]
 pub fn install_autostart() -> Result<String, GuardError> {
     let exe_path = std::env::current_exe()?;
     let command = format!("\"{}\" --background --silent", exe_path.display());
@@ -25,6 +26,7 @@ pub fn install_autostart() -> Result<String, GuardError> {
     let data_w = to_wide_null(&command);
 
     let mut hkey: HKEY = std::ptr::null_mut();
+    // SAFETY: `subkey_w` is NUL-terminated UTF-16 and `hkey` is a valid out-pointer.
     let status = unsafe {
         RegOpenKeyExW(
             HKEY_CURRENT_USER,
@@ -41,8 +43,11 @@ pub fn install_autostart() -> Result<String, GuardError> {
         });
     }
 
-    let byte_len = u32::try_from(data_w.len().saturating_mul(2))
-        .map_err(|_| GuardError::InvalidArgument("autostart path exceeds Windows registry limit"))?;
+    let byte_len = u32::try_from(data_w.len().saturating_mul(2)).map_err(|_| {
+        GuardError::InvalidArgument("autostart path exceeds Windows registry limit")
+    })?;
+    // SAFETY: `hkey` is a valid open registry handle; `name_w` and `data_w` are NUL-terminated
+    // UTF-16 buffers whose byte length matches `byte_len`.
     let write_status = unsafe {
         RegSetValueExW(
             hkey,
@@ -53,6 +58,7 @@ pub fn install_autostart() -> Result<String, GuardError> {
             byte_len,
         )
     };
+    // SAFETY: `hkey` was opened by `RegOpenKeyExW` above and is closed exactly once.
     unsafe { RegCloseKey(hkey) };
 
     if write_status != ERROR_SUCCESS {
@@ -66,11 +72,13 @@ pub fn install_autostart() -> Result<String, GuardError> {
 }
 
 /// Removes the `HidBacklightGuard` entry from HKCU Run.
+#[allow(unsafe_code)]
 pub fn uninstall_autostart() -> Result<(), GuardError> {
     let subkey_w = to_wide_null(RUN_SUBKEY);
     let name_w = to_wide_null(VALUE_NAME);
 
     let mut hkey: HKEY = std::ptr::null_mut();
+    // SAFETY: `subkey_w` is NUL-terminated UTF-16 and `hkey` is a valid out-pointer.
     let status = unsafe {
         RegOpenKeyExW(
             HKEY_CURRENT_USER,
@@ -87,7 +95,9 @@ pub fn uninstall_autostart() -> Result<(), GuardError> {
         });
     }
 
+    // SAFETY: `hkey` is a valid open registry handle and `name_w` is NUL-terminated UTF-16.
     let del_status = unsafe { RegDeleteValueW(hkey, name_w.as_ptr()) };
+    // SAFETY: `hkey` was opened by `RegOpenKeyExW` above and is closed exactly once.
     unsafe { RegCloseKey(hkey) };
 
     if del_status != ERROR_SUCCESS {

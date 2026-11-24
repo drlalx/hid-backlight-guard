@@ -7,8 +7,11 @@ use hidapi::HidApi;
 /// Peripheral manufacturer identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Vendor {
+    /// Razer Inc. (`VID 0x1532`).
     Razer,
+    /// Logitech (`VID 0x046D`).
     Logitech,
+    /// Any other vendor identified by name.
     Other(&'static str),
 }
 
@@ -25,12 +28,19 @@ impl fmt::Display for Vendor {
 /// Hardware form factor of a discovered HID peripheral.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceKind {
+    /// Full or compact keyboard.
     Keyboard,
+    /// Wired or wireless mouse.
     Mouse,
+    /// One-handed gaming keypad.
     Keypad,
+    /// Audio headset or headphones.
     Headset,
+    /// Illuminated mousemat or desk mat.
     Mousemat,
+    /// Lighting controller, dock, stand, or other accessory.
     Accessory,
+    /// Unclassified peripheral type.
     Unknown,
 }
 
@@ -56,28 +66,52 @@ pub enum RestoreMode {
     #[default]
     Native,
     /// Set a solid static color after waking the backlight.
-    Static { r: u8, g: u8, b: u8 },
+    Static {
+        /// Red channel (`0..=255`).
+        r: u8,
+        /// Green channel (`0..=255`).
+        g: u8,
+        /// Blue channel (`0..=255`).
+        b: u8,
+    },
 }
 
 /// Metadata describing one controllable backlight device.
 #[derive(Debug, Clone)]
 pub struct DeviceInfo {
+    /// Peripheral manufacturer.
     pub vendor: Vendor,
+    /// Human-readable device name.
     pub name: String,
+    /// Peripheral hardware form factor.
     pub kind: DeviceKind,
+    /// USB Vendor ID.
     pub vid: u16,
+    /// USB Product ID.
     pub pid: u16,
+    /// OS-specific HID device path.
     pub path: String,
+    /// Active lighting control protocol summary.
     pub protocol: String,
 }
 
 /// Unified error type for HID backlight discovery, protocol I/O, and Windows hooks.
 #[derive(Debug)]
 pub enum GuardError {
+    /// Underlying `hidapi` error.
     Hid(hidapi::HidError),
-    Win32 { op: &'static str, code: u32 },
+    /// Win32 API call failure with operation name and error code.
+    Win32 {
+        /// Win32 function name.
+        op: &'static str,
+        /// Win32 error code returned by the API.
+        code: u32,
+    },
+    /// Vendor HID protocol error or invalid packet framing.
     Protocol(&'static str),
+    /// Invalid CLI argument or configuration parameter.
     InvalidArgument(&'static str),
+    /// Standard I/O error.
     Io(std::io::Error),
 }
 
@@ -109,9 +143,13 @@ impl From<std::io::Error> for GuardError {
 
 /// A single open peripheral whose backlight can be turned off and restored.
 pub trait BacklightDevice {
+    /// Returns metadata identifying this device.
     fn info(&self) -> &DeviceInfo;
+    /// Turns the device's backlight off.
     fn set_backlight_off(&mut self) -> Result<(), GuardError>;
+    /// Turns the device's backlight back on using the requested restore strategy.
     fn set_backlight_on(&mut self, restore: RestoreMode) -> Result<(), GuardError>;
+    /// Queries device-specific diagnostic details (LED zones, brightness, active effect).
     fn probe_details(&mut self) -> Result<Vec<String>, GuardError> {
         Ok(Vec::new())
     }
@@ -119,7 +157,9 @@ pub trait BacklightDevice {
 
 /// Vendor backend responsible for discovering matching peripherals via `HidApi`.
 pub trait BacklightBackend {
+    /// Short identifier for this backend (e.g., `"razer"`, `"logitech"`).
     fn name(&self) -> &'static str;
+    /// Discovers all controllable devices handled by this backend.
     fn discover(&self, api: &HidApi) -> Result<Vec<Box<dyn BacklightDevice>>, GuardError>;
 }
 

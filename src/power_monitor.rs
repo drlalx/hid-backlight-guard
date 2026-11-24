@@ -3,20 +3,20 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use hidapi::HidApi;
-use windows_sys::core::GUID;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::Console::GetConsoleWindow;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Power::{
-    RegisterPowerSettingNotification, UnregisterPowerSettingNotification, HPOWERNOTIFY,
-    POWERBROADCAST_SETTING,
+    HPOWERNOTIFY, POWERBROADCAST_SETTING, RegisterPowerSettingNotification,
+    UnregisterPowerSettingNotification,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, PostQuitMessage,
-    RegisterClassW, ShowWindow, TranslateMessage, CW_USEDEFAULT, DEVICE_NOTIFY_WINDOW_HANDLE,
-    HWND_MESSAGE, MSG, PBT_APMRESUMEAUTOMATIC, PBT_APMSUSPEND, PBT_POWERSETTINGCHANGE,
-    SW_HIDE, WM_DESTROY, WM_POWERBROADCAST, WNDCLASSW,
+    CW_USEDEFAULT, CreateWindowExW, DEVICE_NOTIFY_WINDOW_HANDLE, DefWindowProcW, DispatchMessageW,
+    GetMessageW, HWND_MESSAGE, MSG, PBT_APMRESUMEAUTOMATIC, PBT_APMSUSPEND, PBT_POWERSETTINGCHANGE,
+    PostQuitMessage, RegisterClassW, SW_HIDE, ShowWindow, TranslateMessage, WM_DESTROY,
+    WM_POWERBROADCAST, WNDCLASSW,
 };
+use windows_sys::core::GUID;
 
 use crate::backends::discover_all_devices;
 use crate::device::{GuardError, RestoreMode};
@@ -97,6 +97,7 @@ fn guid_eq(a: &GUID, b: &GUID) -> bool {
     a.data1 == b.data1 && a.data2 == b.data2 && a.data3 == b.data3 && a.data4 == b.data4
 }
 
+#[allow(unsafe_code)]
 unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
@@ -109,12 +110,16 @@ unsafe extern "system" fn window_proc(
             if event == PBT_POWERSETTINGCHANGE {
                 let setting_ptr = lparam as *const POWERBROADCAST_SETTING;
                 if !setting_ptr.is_null() {
-                    let setting = &*setting_ptr;
+                    // SAFETY: Windows passes a valid `POWERBROADCAST_SETTING` pointer in `lparam`
+                    // for `PBT_POWERSETTINGCHANGE`, and we verified it is non-null.
+                    let setting = unsafe { &*setting_ptr };
                     if (guid_eq(&setting.PowerSetting, &GUID_CONSOLE_DISPLAY_STATE)
                         || guid_eq(&setting.PowerSetting, &GUID_SESSION_DISPLAY_STATUS))
                         && setting.DataLength >= 4
                     {
-                        let bytes = std::slice::from_raw_parts(setting.Data.as_ptr(), 4);
+                        // SAFETY: `setting.DataLength >= 4` guarantees at least 4 readable bytes
+                        // starting at `setting.Data`.
+                        let bytes = unsafe { std::slice::from_raw_parts(setting.Data.as_ptr(), 4) };
                         if let (Some(&b0), Some(&b1), Some(&b2), Some(&b3)) =
                             (bytes.first(), bytes.get(1), bytes.get(2), bytes.get(3))
                         {
@@ -131,14 +136,19 @@ unsafe extern "system" fn window_proc(
             1
         }
         WM_DESTROY => {
-            PostQuitMessage(0);
+            // SAFETY: Standard Win32 shutdown signal inside `WM_DESTROY`.
+            unsafe { PostQuitMessage(0) };
             0
         }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        _ => {
+            // SAFETY: Forwards unhandled messages to the default Win32 window procedure.
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        }
     }
 }
 
 /// Runs the blocking Windows message loop until terminated.
+#[allow(unsafe_code)]
 pub fn run_background_monitor(hide_console: bool, restore: RestoreMode) -> Result<(), GuardError> {
     match restore {
         RestoreMode::Native => RESTORE_STATIC.store(false, Ordering::SeqCst),
@@ -151,12 +161,15 @@ pub fn run_background_monitor(hide_console: bool, restore: RestoreMode) -> Resul
     }
 
     if hide_console {
+        // SAFETY: `GetConsoleWindow` takes no pointers and returns null if no console is attached.
         let console = unsafe { GetConsoleWindow() };
         if !console.is_null() {
+            // SAFETY: `console` was checked non-null above.
             unsafe { ShowWindow(console, SW_HIDE) };
         }
     }
 
+    // SAFETY: Passing null returns the module handle of the current executable.
     let hinstance = unsafe { GetModuleHandleW(std::ptr::null()) };
     let class_name: Vec<u16> = "HidBacklightGuardMsgClass\0".encode_utf16().collect();
 
@@ -173,8 +186,10 @@ pub fn run_background_monitor(hide_console: bool, restore: RestoreMode) -> Resul
         lpszClassName: class_name.as_ptr(),
     };
 
+    // SAFETY: `wc` is properly initialized and `class_name` is NUL-terminated UTF-16.
     unsafe { RegisterClassW(&wc) };
 
+    // SAFETY: `class_name` is NUL-terminated UTF-16 and `hinstance` is the current module handle.
     let hwnd = unsafe {
         CreateWindowExW(
             0,
@@ -199,6 +214,7 @@ pub fn run_background_monitor(hide_console: bool, restore: RestoreMode) -> Resul
         });
     }
 
+    // SAFETY: `hwnd` is a valid non-null window handle and the GUID is a static constant.
     let notify1: HPOWERNOTIFY = unsafe {
         RegisterPowerSettingNotification(
             hwnd,
@@ -206,6 +222,7 @@ pub fn run_background_monitor(hide_console: bool, restore: RestoreMode) -> Resul
             DEVICE_NOTIFY_WINDOW_HANDLE,
         )
     };
+    // SAFETY: `hwnd` is a valid non-null window handle and the GUID is a static constant.
     let notify2: HPOWERNOTIFY = unsafe {
         RegisterPowerSettingNotification(
             hwnd,
@@ -214,12 +231,15 @@ pub fn run_background_monitor(hide_console: bool, restore: RestoreMode) -> Resul
         )
     };
 
+    // SAFETY: `MSG` is a plain Win32 C struct where all-zero initialization is valid.
     let mut msg: MSG = unsafe { std::mem::zeroed() };
     loop {
+        // SAFETY: `msg` is a valid mutable pointer to `MSG` for the current thread's queue.
         let ret = unsafe { GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) };
         if ret <= 0 {
             break;
         }
+        // SAFETY: `msg` was populated by a successful `GetMessageW` call.
         unsafe {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
@@ -227,9 +247,11 @@ pub fn run_background_monitor(hide_console: bool, restore: RestoreMode) -> Resul
     }
 
     if notify1 != 0 {
+        // SAFETY: `notify1` is a valid non-zero handle returned by `RegisterPowerSettingNotification`.
         unsafe { UnregisterPowerSettingNotification(notify1) };
     }
     if notify2 != 0 {
+        // SAFETY: `notify2` is a valid non-zero handle returned by `RegisterPowerSettingNotification`.
         unsafe { UnregisterPowerSettingNotification(notify2) };
     }
 
