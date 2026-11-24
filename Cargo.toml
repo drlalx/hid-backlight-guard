@@ -16,7 +16,7 @@ categories = ["command-line-utilities", "hardware-support"]
 hidapi = { version = "2.6", default-features = false, features = ["linux-native-basic-udev", "macos-shared-device"] }
 
 [target.'cfg(windows)'.dependencies.windows-sys]
-version = "0.59"
+version = "0.61"
 features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
